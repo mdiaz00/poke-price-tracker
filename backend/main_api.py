@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database.db_init import SessionLocal, init_db
 from database.models import Card, Sale
-from backend.data.calculate_median import calculate_medians
+from data.calculate_median import calculate_medians
 from typing import Optional
 
 app = FastAPI()
