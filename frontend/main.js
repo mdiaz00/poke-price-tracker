@@ -1,44 +1,55 @@
-// Auto-search if a card was saved from trending page
-window.onload = function() {
+// frontend/main.js
+
+window.onload = function () {
     const savedCard = localStorage.getItem("searchedCard");
     if (savedCard) {
         document.getElementById("cardNameInput").value = savedCard;
         localStorage.removeItem("searchedCard");
-        searchCard();  // 🔥 Auto-run the search
+        searchCard();
     }
+};
+
+let chart = null;
+
+async function fetchSearchResults(query) {
+    const response = await fetch(`https://poke-price-tracker.onrender.com/search?q=${encodeURIComponent(query)}`);
+    return await response.json();
 }
 
-let chart = null; // Global chart variable
+document.getElementById("cardNameInput").addEventListener("input", async (e) => {
+    const resultsContainer = document.getElementById("searchResults");
+    const query = e.target.value.trim();
+    resultsContainer.innerHTML = "";
 
-function calculateMovingAverage(data, windowSize) {
-    let movingAverages = [];
+    if (query.length >= 2) {
+        const results = await fetchSearchResults(query);
 
-    for (let i = 0; i < data.length; i++) {
-        if (i < windowSize - 1) {
-            movingAverages.push(null); // not enough data yet
-        } else {
-            let sum = 0;
-            for (let j = 0; j < windowSize; j++) {
-                sum += data[i - j];
-            }
-            movingAverages.push(sum / windowSize);
-        }
+        results.forEach(card => {
+            const div = document.createElement("div");
+            div.className = "search-result";
+            div.innerText = `${card.name} (${card.set_number})`;
+            div.onclick = () => {
+                document.getElementById("cardNameInput").value = card.name;
+                resultsContainer.innerHTML = "";
+                searchCard();
+            };
+            resultsContainer.appendChild(div);
+        });
     }
+});
 
-    return movingAverages;
-}
+// Add this container in index.html below the input:
+// <div id="searchResults" class="search-results"></div>
 
 async function searchCard() {
     const cardName = document.getElementById("cardNameInput").value;
-    const selectedCondition = document.getElementById("conditionFilter").value;
-    const selectedWindowSize = parseInt(document.getElementById("movingAverageWindow").value);
-    const url = `http://127.0.0.1:8000/card/${encodeURIComponent(cardName)}`;
+    const selectedCondition = document.getElementById("conditionFilter")?.value || "all";
+    const selectedWindowSize = parseInt(document.getElementById("movingAverageWindow")?.value || 3);
+    const url = `https://poke-price-tracker.onrender.com/card/${encodeURIComponent(cardName)}`;
 
     const resultDiv = document.getElementById("result");
     const chartCanvas = document.getElementById("priceChart");
     const spinner = document.getElementById("spinner");
-
-    // 🎯 Start spinner
     spinner.style.display = "block";
     resultDiv.innerHTML = "";
 
@@ -47,39 +58,11 @@ async function searchCard() {
         if (!response.ok) {
             throw new Error("Card not found");
         }
-
         const data = await response.json();
+        spinner.style.display = "none";
 
-        // 📈 Build the Chart with Filter
-        let filteredSales = data.sales;
-
-        if (selectedCondition !== "all") {
-            filteredSales = data.sales.filter(sale => sale.condition === selectedCondition);
-        }
-
-        const dates = filteredSales.map(sale => sale.sold_date);
-        const prices = filteredSales.map(sale => sale.price);
-
-        // 🔥 Calculate moving average AFTER you have prices
-        const movingAverage = calculateMovingAverage(prices, selectedWindowSize);
-
-        // 🔥 Calculate price change %
-        let priceChangeText = '';
-        if (prices.length >= 2) {
-            const firstPrice = prices[0];
-            const lastPrice = prices[prices.length - 1];
-            const priceChange = ((lastPrice - firstPrice) / firstPrice) * 100;
-
-            const changeDirection = priceChange >= 0 ? 'up' : 'down';
-            const changeColor = priceChange >= 0 ? 'green' : 'red';
-
-            priceChangeText = `<h4>Price Change: <span style="color:${changeColor};">${priceChange.toFixed(2)}% ${changeDirection}</span></h4>`;
-        }
-
-        // 🧹 Build HTML output
         let html = `<h2>${data.card_name}</h2>`;
         html += `<h3>Set Number: ${data.set_number}</h3>`;
-        html += priceChangeText; // 🔥 Add price change line here
 
         html += "<h4>Medians:</h4><ul>";
         for (const condition in data.medians) {
@@ -95,9 +78,12 @@ async function searchCard() {
 
         resultDiv.innerHTML = html;
 
-        if (chart) {
-            chart.destroy();
-        }
+        const filteredSales = selectedCondition !== "all" ? data.sales.filter(s => s.condition === selectedCondition) : data.sales;
+        const dates = filteredSales.map(s => s.sold_date);
+        const prices = filteredSales.map(s => s.price);
+        const movingAverage = calculateMovingAverage(prices, selectedWindowSize);
+
+        if (chart) chart.destroy();
 
         chart = new Chart(chartCanvas, {
             type: 'line',
@@ -105,53 +91,42 @@ async function searchCard() {
                 labels: dates,
                 datasets: [
                     {
-                        label: `Sold Price ($) [${selectedCondition === "all" ? "All Conditions" : selectedCondition}]`,
+                        label: `Price [${selectedCondition}]`,
                         data: prices,
                         borderColor: 'blue',
                         borderWidth: 2,
-                        fill: false,
                         tension: 0.3
                     },
                     {
-                        label: `Moving Average (${selectedWindowSize} sales)`,
+                        label: `Moving Avg (${selectedWindowSize})`,
                         data: movingAverage,
                         borderColor: 'red',
-                        borderWidth: 2,
-                        fill: false,
                         borderDash: [5, 5],
+                        borderWidth: 2,
                         tension: 0.3
                     }
                 ]
             },
             options: {
                 scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: 'Sold Date'
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Price ($)'
-                        },
-                        beginAtZero: false
-                    }
+                    x: { title: { display: true, text: 'Sold Date' } },
+                    y: { title: { display: true, text: 'Price ($)' }, beginAtZero: false }
                 }
             }
         });
 
-        // 🎯 Only now stop spinner (success)
-        spinner.style.display = "none";
-
     } catch (error) {
         resultDiv.innerHTML = `<p style="color:red;">${error.message}</p>`;
-        if (chart) {
-            chart.destroy();
-        }
-        // 🎯 Also stop spinner if there’s an error
+        if (chart) chart.destroy();
         spinner.style.display = "none";
     }
 }
 
+function calculateMovingAverage(data, windowSize) {
+    const averages = [];
+    for (let i = 0; i < data.length; i++) {
+        if (i < windowSize - 1) averages.push(null);
+        else averages.push(data.slice(i - windowSize + 1, i + 1).reduce((a, b) => a + b, 0) / windowSize);
+    }
+    return averages;
+}

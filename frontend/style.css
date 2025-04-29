@@ -44,3 +44,19 @@ button {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+.search-results {
+  border: 1px solid #ccc;
+  max-height: 200px;
+  overflow-y: auto;
+  background: white;
+  margin-top: 4px;
+}
+
+.search-result {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.search-result:hover {
+  background-color: #f0f0f0;
+}

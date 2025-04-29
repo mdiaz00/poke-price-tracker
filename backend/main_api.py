@@ -1,104 +1,90 @@
-# backend/main_api.py
-
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from database.db_init import SessionLocal
-from database.models import Card, Sale
-from utils.calculate_median import calculate_median
+from backend.database.db_init import SessionLocal, init_db
+from backend.database.models import Card, Sale
+from backend.data.calculate_median import calculate_medians
+from typing import Optional
 
 app = FastAPI()
 
-@app.get("/")
-def home():
-    return {"message": "Welcome to PokePrice Tracker API!"}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 @app.get("/card/{card_name}")
 def get_card_info(
     card_name: str,
-    condition: str = Query(None, description="Filter by card condition"),
-    sort_by: str = Query("sold_date", description="Sort by 'price' or 'sold_date'"),
-    sort_order: str = Query("desc", description="Sort 'asc' or 'desc'")
+    condition: Optional[str] = None,
+    sort_by: Optional[str] = "sold_date",
+    sort_order: Optional[str] = "desc",
+    db: Session = Depends(get_db)
 ):
-    db = SessionLocal()
+    card = db.query(Card).filter(Card.name == card_name).first()
 
-    # Search card
-    card = db.query(Card).filter(Card.name.ilike(f"%{card_name}%")).first()
+    # Fallback to first partial match if exact not found
     if not card:
-        db.close()
-        raise HTTPException(status_code=404, detail="Card not found")
-    card.search_count += 1
-    db.commit()
-    db.refresh(card)
+        card = db.query(Card).filter(Card.name.ilike(f"%{card_name}%")).first()
 
-    # Get sales
-    query = db.query(Sale).filter(Sale.card_id == card.id)
+    if not card:
+        raise HTTPException(status_code=404, detail="Card not found")
+
+    sales_query = db.query(Sale).filter(Sale.card_id == card.id)
 
     if condition:
-        query = query.filter(Sale.condition == condition)
+        sales_query = sales_query.filter(Sale.condition == condition)
 
-    # Handle sorting
     if sort_by == "price":
         if sort_order == "asc":
-            query = query.order_by(Sale.price.asc())
+            sales_query = sales_query.order_by(Sale.price.asc())
         else:
-            query = query.order_by(Sale.price.desc())
-    else:  # default to sorting by sold_date
+            sales_query = sales_query.order_by(Sale.price.desc())
+    else:
         if sort_order == "asc":
-            query = query.order_by(Sale.sold_date.asc())
+            sales_query = sales_query.order_by(Sale.sold_date.asc())
         else:
-            query = query.order_by(Sale.sold_date.desc())
+            sales_query = sales_query.order_by(Sale.sold_date.desc())
 
-    sales = query.all()
+    sales = sales_query.all()
+    medians = calculate_medians(sales)
 
-    if not sales:
-        db.close()
-        raise HTTPException(status_code=404, detail="No sales found for this card")
-
-    # Group prices by condition
-    conditions = {}
-    for sale in sales:
-        cond = sale.condition
-        if cond not in conditions:
-            conditions[cond] = []
-        conditions[cond].append(sale.price)
-
-    # Calculate medians
-    medians = {}
-    for cond, prices in conditions.items():
-        medians[cond] = calculate_median(prices)
-
-    # Create result
-    result = {
+    return {
         "card_name": card.name,
         "set_number": card.set_number,
         "medians": medians,
         "sales": [
             {
-                "price": sale.price,
-                "condition": sale.condition,
-                "source": sale.source,
-                "sold_date": sale.sold_date,
-            } for sale in sales
+                "price": s.price,
+                "condition": s.condition,
+                "sold_date": s.sold_date.strftime("%Y-%m-%d")
+            } for s in sales
         ]
     }
 
-    db.close()
-    return result
-
 @app.get("/trending")
-def get_trending_cards(limit: int = 5):
-    db = SessionLocal()
-
-    trending = db.query(Card).order_by(Card.search_count.desc()).limit(limit).all()
-
-    result = [
+def get_trending_cards(db: Session = Depends(get_db)):
+    recent_sales = db.query(Sale).order_by(Sale.sold_date.desc()).limit(100).all()
+    card_ids = list(set([s.card_id for s in recent_sales]))
+    trending_cards = db.query(Card).filter(Card.id.in_(card_ids)).all()
+    return [
         {
-            "card_name": card.name,
-            "set_number": card.set_number,
-            "search_count": card.search_count
-        }
-        for card in trending
+            "name": card.name,
+            "set_number": card.set_number
+        } for card in trending_cards
     ]
 
-    db.close()
-    return result
+@app.get("/search")
+def search_cards(q: str = Query(..., min_length=2), db: Session = Depends(get_db)):
+    results = db.query(Card).filter(Card.name.ilike(f"%{q}%")).all()
+    return [{"id": c.id, "name": c.name, "set_number": c.set_number} for c in results]
