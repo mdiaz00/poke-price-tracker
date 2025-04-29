@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PokePrice Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>PokePrice Tracker</h1>
+
+        <input type="text" id="cardNameInput" placeholder="Enter card name and number (e.g. Rosa 236/236)">
+        <button onclick="searchCard()">Search</button>
+
+        <!-- 🔥 ADD THIS DROPDOWN RIGHT HERE UNDER THE SEARCH BUTTON -->
+        <div style="margin-top: 20px;">
+            <label for="conditionFilter">Filter by Condition:</label>
+            <select id="conditionFilter" onchange="searchCard()">
+                <option value="all">All</option>
+                <option value="mint">Mint</option>
+                <option value="near_mint">Near Mint</option>
+                <option value="light_play">Light Play</option>
+                <option value="moderate_play">Moderate Play</option>
+                <option value="damaged">Damaged</option>
+            </select>
+        </div>
+
+        <div style="margin-top: 20px;">
+            <label for="movingAverageWindow">Moving Average Window:</label>
+            <select id="movingAverageWindow" onchange="searchCard()">
+                <option value="3">3 Sales</option>
+                <option value="5">5 Sales</option>
+                <option value="10">10 Sales</option>
+            </select>
+        </div>
+
+        <div id="spinner" style="display:none; margin-top: 20px;">
+            <div class="loader"></div>
+        </div>
+
+        <!-- ALREADY EXISTING -->
+        <div id="result"></div>
+        <canvas id="priceChart" width="400" height="200"></canvas>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>
