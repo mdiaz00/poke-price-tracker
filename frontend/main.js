@@ -47,6 +47,7 @@ async function searchCard() {
     const selectedWindowSize = parseInt(document.getElementById("movingAverageWindow")?.value || 3);
     const url = `https://poke-price-tracker.onrender.com/card/${encodeURIComponent(cardName)}?condition=${selectedCondition}&sort_by=sold_date&sort_order=desc`;
 
+
     const resultDiv = document.getElementById("result");
     const chartCanvas = document.getElementById("priceChart");
     const spinner = document.getElementById("spinner");
